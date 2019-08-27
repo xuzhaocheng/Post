@@ -6,12 +6,12 @@ tags:
   - iOS
 ---
 
-# 写在最前面
+## 写在最前面
 偶然间在`Github`上发现了腾讯的开源项目`LKImageKit`，看着描述觉得很厉害的样子，突然来了兴致，来分析它的代码和架构。
 这篇文章不会在`UI`层次上有过多的纠缠，主要目的是分析其workflow和系统架构。对应的项目文件主要是`Core`目录下的文件。
 这篇文章**不会讲**图片是如何加载的、图片是怎样解码的、缓存策略是怎样的、每种Processor是如何处理的。
 <!-- more -->
-# 系统架构
+## 系统架构
 `LKImageKit`的架构和`SDWebImage`的架构有一些相像。以一个Manager（`LKImageManager`）为中心，来管理Image的加载。同时还有`LKImageDecoderManager`，`LKImageCacheManager`，`LKImageLoaderManager`，`LKImageProcessorManager`几个外围的Manager来协助`LKImageManager`工作。每个`Manager`不直接处理相关工作，而是将工作派发给具体的类去处理。比如`LKImageDecoderManager`会将Decode的工作交给`LKImageDecoder`的子类去做，而这些子类可以由我们自己实现，这也就是官方在其文档中提到的有高度的可扩展性。
 `LKImageKit`与`SDWebImage`有一点很大的不同是，在`LKImageKit`中引入了`Request`的概念(`LKImageRequest`)。在各个模块中都能看见`LKImageRequest`的影子，在整个workflow中有着重要的作用。
 另外`LKImageKit`实现了`LKImageView`，通过继承`UIView`来实现相关的逻辑功能，与`SDWebImage`也略有不同。
@@ -20,11 +20,11 @@ tags:
 ![Simple Class Diagram](LKImageKit-Simple-Class-Diagram.png)
 
 
-# 源码分析
+## 源码分析
 
 `LKIImageRequest`在各个模块中都有涉及，先分析它对于我们理解其他模块会有帮助。
 
-## LKIImageRequest
+### LKIImageRequest
 
 先来看一看`LKImageRequest.h`中都有哪些属性和方法。
 头文件中的属性几乎都有对应的注释，命名也较为规范，在这就不一一列举了。
@@ -404,7 +404,7 @@ rogressive;
 使用`image`来构造一个`LKImageImageRequest`，看起来似乎很傻，估计是为了走框架这套流程造出来的吧。对应的`loader`是`LKImageMemoryImageLoader`，也只解析这一种`LKImageRequest`。
 
 
-## LKImageView
+### LKImageView
 
 照例先看头文件`LKImageView.h`里都有些什么（只列出部分）
 
@@ -671,7 +671,7 @@ rogressive;
 ```
 
 
-## Managers和背后真正干活的人
+### Managers和背后真正干活的人
 Managers负责管理和执行`request`。`request`的生命周期和这些Manager密切相关。前面已经说明了各个Manager间的关系。
 在`LKImageKit`中有这么几个Manager：
 + `LKImageManager`
@@ -683,11 +683,11 @@ Managers负责管理和执行`request`。`request`的生命周期和这些Manage
 要弄清楚一个`request`是如何获得`Image`的流程，我们就需要分析清楚这几个Manager之间的是如何协作的。
 
 
-### LKImageManager
+#### LKImageManager
 让我们先从`LKImageManager`开始分析，这个Manager是`LKImageKit`最为核心的Manager。
 
 我们根据`request`的执行过程来逐一分析相关的变量和方法。
-#### 成员变量
+##### 成员变量
 ```objc
 @property (nonatomic) NSMutableDictionary<NSString *, LKImageRequest *> *requestDic;
 @property (nonatomic) NSOperationQueue *queue;
@@ -695,11 +695,11 @@ Managers负责管理和执行`request`。`request`的生命周期和这些Manage
 + `requestDic`用来存储`requestLV1`。至于这个`LV1`是啥意思，下面会讲到。还有一点需要值得注意，这里面只存储`synchronized`为`NO`的`request`，换句话说，只存`异步`的`request`。
 + `LKImageManager`拥有一个`queue`，它的任务都在这个队列中执行。`queue`的设置在`initWithConfiguration:`方法里可以查看，是一个串行队列。所以说，`LKImageManager`的所有`op`都是按序串行执行的。
 
-#### sendRequest:
+##### sendRequest:
 这是`request`发起的地方，记录了执行开始的时间，检查是否有`cache`，最后调用了`combineRequest:`方法，这个方法才是关键。
 这里要注意的是这个方法的形参`requestLV0`，可能会很奇怪为什么要这样命名，其实`request`后头这个`LV0`非常重要，能够帮助我们理解`request`的组织架构。
 
-#### combineRequest:
+##### combineRequest:
 
 继续来看`combineRequest:`方法，抛去`op`的实际运行代码，这个方法做的事情就是将`request`标记为开始，将全局的`LKImageRunningRequestCount`计数加`1`，然后把`op`丢到队列里，准备执行。
 
@@ -765,17 +765,17 @@ if (requestLV0.isCanceled) {
 那么因为这个`queue`的并发数为1，是个串行队列。而且`requestLV0`的`priority`和`requestLV1`的一样。那么始终会先执行这个`op`，这时`LV0`还没有被加入到`LV1`中，所以并不需要移除。而且`LKImageRunningRequestCount`是在`op`执行前被`add`的，所以这里也可以直接`sub`。
 
 
-#### loadRequest:
+##### loadRequest:
 该方法向`loaderManager`发起了`requestLV1`请求，显然这是需要`loaderManager`去`load`图片了。
 `load`的过程这里不关心。回调的工作也被封装成了一个`op`，丢到了自己的`queue`里去跑。
 
 如果`request`发生了错误，调用`requestDidFinished:`做清理工作，调用`managerCallback:isFromSyncCache:`来通知`request`。
 如果成功返回了image，调用`processRequest:request`，对image进行最后一项工作。
 
-#### `processRequest:request:`
+##### `processRequest:request:`
 该方法对加载成功的图片做最后的处理，将`request`丢给`processorManager`，依次执行`request`中的`processorList`里的每个`processor`。	
 
-#### cancelRequest:
+##### cancelRequest:
 ```objc
 - (void)cancelRequest:(LKImageRequest *)requestLV0
 {
@@ -839,7 +839,7 @@ if (requestLV0.isCanceled) {
 2. 在`imageManagerCancelOperation`里，将`requestLV0`从对应的`requestLV1`的孩子中删除。
 3. 如果删除后`requestLV1`已经没有孩子了，那么说明它也没有存在的意义了，从`requestDic`中移除，然后向`loaderManager`发起取消`requestLV1`的请求。
 
-#### `requestDidFinished:`
+##### `requestDidFinished:`
 这个方法唯一值得注意的地方就是对`requestLV0`的处理，在`requestLV1`执行完之后，将其自己从`requestDic`中移出，并将所有的孩子`requestLV0`都标记为完成，而且会取消它们的`imageManagerCancelOperation`，也就是说在取消发起后至取消真正开始执行前，如果`request`完成了，那么取消操作将不会被执行。
 ```objc
 - (void)requestDidFinished:(LKImageRequest *)requestLV1
@@ -861,7 +861,7 @@ if (requestLV0.isCanceled) {
 }
 ```
 
-### LKImageLoaderManager
+#### LKImageLoaderManager
 `LKImageLoaderManager`负责加载图片，这里的加载定义的比较广，加载的方式可以是从网络下载、本地文件加载、相册加载、内存加载等等。
 同时，`LKImageLoaderManager` 也有图片解码的功能，在头文件中我们可以看见定义了
 ```objc
@@ -871,7 +871,7 @@ if (requestLV0.isCanceled) {
 - 压缩格式的数据（`jpg`,`png`,`jpeg`...)
 - 解码后的位图数据
 
-#### imageWithRequest:callback:
+##### imageWithRequest:callback:
 核心代码就是这个`op`。
 ```objc
 // 构建一个requestLV2，实际是load requestLV2这个request。
@@ -924,7 +924,7 @@ NSOperation *op           = [NSBlockOperation blockOperationWithBlock:^{
 1. 在构造`requestLV2`的时候多做了一件事件，为`LV2`寻找合适的`loader`。在`loaderList`里寻找能加载当前`request`的`loader`
 
 
-#### loadRequest:
+##### loadRequest:
 根据`loader`相应的方法不同，执行不同的代码，一类`loader`加载完成后得到的就是`Image`对象，这类`loader`加载完成后不需要解码操作；另一类`loader`加载完成后得到的是`Data`对象，需要进一步的解码操作才能获得`Image`对象。分别交给`loadImageRequestFinished:image:progress:error:`和`loadDataRequestFinished:data:progress:error:`处理。
 ```objc
 lkweakify(self);
@@ -958,23 +958,23 @@ requestLV2.loaderOperation = [NSBlockOperation blockOperationWithBlock:^{
 ```
 需要注意的是`loaderOperation`是在`requestLV2.loader.queue`里执行的。这个`queue`是个并行队列，每个`loaderOperation`应该占据一个并发线程，所以在`loaderOperation`执行完成之前，使用了信号量来阻塞住线程，来实现同时至多只有`n`个`op`并发。
 
-#### loadImageRequestFinished:image:progress:error:
+##### loadImageRequestFinished:image:progress:error:
 `image`类型加载完成的回调，因为是加载返回的直接是`UIImage`类型的数据，不需要解码，调用`requestLV2`的`loaderCallback:`通知图片加载完成。
 
-#### loadDataRequestFinished:data:progress:error:
+##### loadDataRequestFinished:data:progress:error:
 `data`类型的加载完成回调，因为加载完成返回的结果是`NSData`类型的数据，还需要交给`decoder`进行解码才能获得`UIImage`类型的图片。之后才会调用`requestLV2`的`loaderCallback:`。
 
-### LKImageDecoderManager
+#### LKImageDecoderManager
 这个Manager的工作很简单。它本身持有一个`decoderList`，对外接口最重要的是
 ```objc
 - (void)decodeImageFromData:(NSData *_Nullable)data request:(LKImageRequest * _Nullable)request complete:(LKImageDecoderCallback)complete;
 ```
 调用这个方法后会按序使用`decoderList`里每一个`decoder`尝试去解码这份`data`直到有一个`decoder`能解码成功或者试完了所有`decoder`为止。
 
-### LKImageProcessorManager
+#### LKImageProcessorManager
 图片加载完成后可能需要进行处理，`LKImageProcessorManager`就是管理这些处理操作的，`request`拥有一个`processorList`，这个`List`表明了这个图片需要进行哪些处理操作，`LKImageProcessorManager`对图片逐一的进行处理操作。
 
-### LKImageCacheManager
+#### LKImageCacheManager
 cacheManager也被设计成了拥有一个`cacheList`的形势，可以自定义`cache`，实现自己的`cache`策略。
 
 ```objc
