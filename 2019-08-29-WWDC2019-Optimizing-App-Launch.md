@@ -7,9 +7,13 @@ tags:
   - WWDC2019
 ---
 
+这个Session是[Session 417 - Improving Battery Life and Performance](https://developer.apple.com/videos/play/wwdc2019/417/)的一个扩展。具体介绍了如何优化App的Launch Time。其中对App启动各个阶段的介绍还是挺棒的，让我们对App Launch有更深的了解。
+<!-- more -->
 ## What's Launch
+这一节介绍了App Launch的几种类型和App Launch的几个阶段。
 
 ### Launch Types
+App的Launch可以分为以下三种类型:
 - Cold Launch: 重启后，App没有被打开过；App不存在于内存中，进程不存在。
 - Warm Launch: App曾经启动过；App部分存在于内存中，进程不存在。
 - Resume Launch: App被挂起，App存在于内存中，进程存在。 
@@ -17,7 +21,7 @@ tags:
 速度: Resume Launch > Warm Launch > Cold Launch
 
 ### Phases of App launch
-一个App的启动可以被分为以下几个部分(按时间排序):
+按照时间顺序，App的Launch经历了以下几个阶段:
 - System Interface
 - Runtime Init
 - UIKit Init
@@ -25,24 +29,29 @@ tags:
 - Initial Frame Render
 - Extended
 
+这些阶段中，有的阶段可以被我们的程序代码影响到，有的阶段只是纯系统的工作阶段。
+
 #### System Interface
-System Interface又分为两部分：Dynamic Linker Loads(DYLD3)和libSystem Init
+System Interface又分为两部分：Dynamic Linker Loads(DYLD3)和libSystem Init。
+这一阶段主要工作是加载dependencies和初始化App运行环境。
 
 ##### Dynamic Linker Loads
-Dynamic Linker Loads已经发布的版本是DYLD3。DYLD负责的是加载library和framework。在iOS 13中，DYLD会缓存App的runtime dependencies，在Warm Launch的时候使用，从而提升Warm Launch的速度。
+Dynamic Linker Loads最新的版本是DYLD3，在iOS 13中被引入。DYLD负责的是加载dependencies，dependencies包括framewo和library。DYLD3在第一次加载dependencies后会缓存它们，然后在Warm Launch的时候可以使用这部分缓存，从而提升Warm Launch的速度。
+
 在这个阶段，App给了我们两个建议来优化加载时间:
-- 移除不使用的framework，这能减少加载framework的时间
-- 避免使用`DLOpen`, `NSBundleLoad`，这些方式加载的framework不能被系统给cache到。
-- Hard Link所有使用的framework。
+- 移除不使用的framework，这能减少加载framework的时间。
+- 避免使用`DLOpen`, `NSBundleLoad`等一些动态加载的函数，这些方式加载的framework不能被DYLD cache。
+- Hard Link所有使用的framework。这能保证这些framework被DYLD缓存。
 
 ##### libSystem Init
-这部分主要是初始化系统底层的一些components接口，这一阶段开发者并不能做一些什么。
+这阶段的工作主要是初始化系统底层的一些components接口，这一阶段开发者并不能做一些什么。
 
 #### Runtime Init
-Runtime Init阶段会初始化Objc/Swift的runtime。在Objc代码中，我们通常会通过重写`[Class load]`方法来实现一些功能，这部分代码会在Runtime Init的时候被调用到。Apple的建议尽可能的把这些代码移到`[Class initialize]`中。因为`load`方法会在每次Launch时调用，`initialize`方法会在第一次使用的时候调用。
+Runtime Init阶段负责初始化Objc/Swift的runtime。这部分的运行时间可能会被我们App的代码影响。
+在Objc代码中，我们通常会通过重写`[Class load]`方法来实现一些功能(比如Swizzle)，这部分代码会在Runtime Init的时候被调用到。Apple的建议尽可能的把这些代码移到`[Class initialize]`中。因为`load`方法会在每次Launch时调用，`initialize`方法会在第一次使用的时候调用(相当于Lazy Load)。
 
 #### UIKit Init
-这部分就与我们的日常开发有了比较大的关系了。在这个阶段会初始App的`UIApplication`和`UIApplicationDelegate`，如果你的App中继承了这两个类，确保他们在初始化的时候没有做耗时的工作。
+这部分就与我们的日常开发有了比较大的关系了。在这个阶段会初始化App的`UIApplication`和`UIApplicationDelegate`，如果你的App中继承了这两个类，确保他们在初始化的时候没有做耗时的工作。
 
 #### Application Init
 这个阶段涉及到的是App的Life Cycle。会调用到`UIApplicationDelegate`和`UISeceneDelegate`中的几个Life Cycle的回调方法。
@@ -65,12 +74,11 @@ Runtime Init阶段会初始化Objc/Swift的runtime。在Objc代码中，我们�
 尽量使View的层级扁平化，太多的View嵌套会增加渲染的时间。
 
 ##### Autolayout
-约束的数量以及是否合理会影响到Layout的时间，试着减少约束的数量并检查约束是否合理。
+精简Constraint的数量并且检查Constraint的质量，复杂的Constraint会增加Layout的时间。
 
 #### Extended
-这个阶段不是每个App都有，第一次打开App时有时候我们需要加载/下载一些额外的数据，我们需要确保这部分数据都是异步加载的，然后不会影响到用户流畅的使用App。
+这个阶段不是每个App都有，第一次打开App时有时候我们需要加载/下载一些额外的数据，我们需要确保这部分数据都是异步加载的，不会影响到用户流畅的使用App。一个原则就是不阻塞主线程。
 我们可以使用`os_signpost`来measure这部分的性能。
-
 
 ## Measure Lauch
 这一节介绍了如何度量launch time。那么首先就需要一个稳定的环境，排除其他因素的干扰。Apple给我们提供了一些方法来创造一个相对稳定的环境。
@@ -84,7 +92,14 @@ Runtime Init阶段会初始化Objc/Swift的runtime。在Objc代码中，我们�
 我们可以通过XCTest来度量我们的launch time
 
 ## Profile
-Session里提了优化的Tips，其实也都是老生常谈了。启动时做最少的事情，耗时的操作放到背景线程做，减少内存的使用等等方法。
+Session里提了优化的Tips，其实也都是老生常谈了。逃不过这么几个原则:启动时尽量做最少的工作，耗时的操作放到背景线程做，减少内存的使用等等方法。
 
-另外介绍了Instrument的新的一个模板：App Launch Template
-利用这个模板，我们能在Profile的时候清楚的看到Launch的各个阶段所花费的时间，还能
+另外介绍了Xcode 11中引入的Instrument的新模板：`App Launch Template`。
+我们可以使用这个模板来帮助我们发现启动过程中的瓶颈。借助`App Launch Template`，我们能在Profile的时候清楚的看到Launch的各个阶段使用的时间，各个线程使用的情况，还能帮助我们定位问题代码。从Demo里看Instrument提供的信息还是非常多的，值得期待。
+
+## Track
+一次优化完了并不是就完事了的。在后续开发中可能会引入新的代码影响Launch Time，也可能因为种种原因导致线上的性能并不如测试时候的表现。
+针对这些问题，Apple给我们提供了解决方案:
+一方面，在开发阶段，我们可以使用XCTest来及时的发现Regression issue，具体来说就是编写一个监测App启动的Test，设置一个baseline。这样一来任何影响到启动时间的改动都能及时的被Track到。
+另一方面，我们可以在新的Xcode Organizer中观察从用户设备上搜集的数据，来监测线上环境中用户的启动时间，帮助我们发现问题。
+
