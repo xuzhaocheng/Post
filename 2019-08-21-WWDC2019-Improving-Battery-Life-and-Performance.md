@@ -111,7 +111,7 @@ class MySubscriber: NSObject, MXMetricManagerSubscriber {
 Session里提到了会对每天搜集的Metrics做一次总结然后返回给设备，所以这个回调方法也会在每天回调一次。
 > The system calls this method at most once per day.
 
-使用Xcode attach到设备上后，可以通过*Debug->Simulate MetricKit Payloads*来查看搜集的指标数据。
+Apple也考虑了开发的修，使用Xcode attach到设备上后，可以通过*Debug->Simulate MetricKit Payloads*来立刻触发一次搜集的过程，这会触发`didReceive(_ payload: [MXMetricPayload])`方法。
 
 ### Metrics for Critical Code Sections
 另一个这次提供的工具是`mxSignposts`，它也属于`MetricKit`，利用这个工具，我们可以方便的测量我们关键逻辑的性能参数。比如处理图像、处理音视频等一些耗时的工作，我们希望监测一些指标。
