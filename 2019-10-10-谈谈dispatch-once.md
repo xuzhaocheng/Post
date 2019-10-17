@@ -1,5 +1,5 @@
 ---
-title: 探究dispatch_once
+title: 浅谈dispatch_once
 date: 2019-10-10 11:46:19
 categories: Tech
 tags: 
