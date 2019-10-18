@@ -41,26 +41,29 @@ Dynamic Linker Loads最新的版本是DYLD3，在iOS 13中被引入。DYLD负责
 在这个阶段，App给了我们两个建议来优化加载时间:
 - 移除不使用的framework，这能减少加载framework的时间。
 - 避免使用`DLOpen`, `NSBundleLoad`等一些动态加载的函数，这些方式加载的framework不能被DYLD cache。
-- Hard Link所有使用的framework。这能保证这些framework被DYLD缓存。
+- Hard Link所有framework。这能保证这些framework被DYLD缓存。
+
+关于Hard Link和Weak Link:
+在*Xcode Project -> Targets -> Build Phases -> Link Binary with Libraries*下可以添加需要的Framework，`Require`的表示的就是Hard Link，而`Optional`表示的是Weak Link。使用Weak Link的原因是有时候我们需要使用到Framework只在高版本的iOS系统中存在，而Project的Deployment Target又是低版本的系统。这时候如果使用Hard Link来Link Framework，在低版本的iOS系统上运行就会Crash。
 
 ##### libSystem Init
 这阶段的工作主要是初始化系统底层的一些components接口，这一阶段开发者并不能做一些什么。
 
-#### Runtime Init
+#### Static Runtime Init
 Runtime Init阶段负责初始化Objc/Swift的runtime。这部分的运行时间可能会被我们App的代码影响。
-在Objc代码中，我们通常会通过重写`[Class load]`方法来实现一些功能(比如Swizzle)，这部分代码会在Runtime Init的时候被调用到。Apple的建议尽可能的把这些代码移到`[Class initialize]`中。因为`load`方法会在每次Launch时调用，`initialize`方法会在第一次使用的时候调用(相当于Lazy Load)。
+Apple不建议我们在这一阶段做事情，因为这会影响到启动时间。但是在Objc代码中，我们经常会通过重写`[Class load]`方法来实现一些功能(比如Swizzle)，这部分代码会在这一阶段被调用。如果非要在`load`方法里做事情，Apple建议尽可能的把这些代码移到`[Class initialize]`中。因为`load`方法会在每次Launch时调用，`initialize`方法会在第一次使用的时候调用(类似于Lazy Load)。
 
 #### UIKit Init
 这部分就与我们的日常开发有了比较大的关系了。在这个阶段会初始化App的`UIApplication`和`UIApplicationDelegate`，如果你的App中继承了这两个类，确保他们在初始化的时候没有做耗时的工作。
 
 #### Application Init
 这个阶段涉及到的是App的Life Cycle。会调用到`UIApplicationDelegate`和`UISeceneDelegate`中的几个Life Cycle的回调方法。
-- application:willFinishLaunchingWithOptions: 
-- application:didFinishLaunchingWithOptions:
-- applicationDidBecomeActive:
-- scene:willConnectToSession:options: 
-- sceneWillEnterForeground: 
-- sceneDidBecomeActive:
+- `application:willFinishLaunchingWithOptions: `
+- `application:didFinishLaunchingWithOptions:`
+- `applicationDidBecomeActive:`
+- `scene:willConnectToSession:options: `
+- `sceneWillEnterForeground: `
+- `sceneDidBecomeActive:`
 
 一个原则就是不在这些方法里做耗时的操作，如果必须，想办法放到背景线程里做。
 
@@ -103,3 +106,7 @@ Session里提了优化的Tips，其实也都是老生常谈了。逃不过这么
 一方面，在开发阶段，我们可以使用XCTest来及时的发现Regression issue，具体来说就是编写一个监测App启动的Test，设置一个baseline。这样一来任何影响到启动时间的改动都能及时的被Track到。
 另一方面，我们可以在新的Xcode Organizer中观察从用户设备上搜集的数据，来监测线上环境中用户的启动时间，帮助我们发现问题。
 
+## Reference
+[Optimizing App Launch](https://developer.apple.com/videos/play/wwdc2019/423)
+[Frameworks and Weak Linking](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPFrameworks/Concepts/WeakLinking.html)
+[Weak Linking](https://nixwang.com/2017/08/26/weak-linking/)
