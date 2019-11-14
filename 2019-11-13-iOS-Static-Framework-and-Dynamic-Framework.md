@@ -48,11 +48,14 @@ Apple声称iOS 13中的`Dynamic Linker Loader 3`(`dydl3`)也支持了对非系�
 
 ### 内存
 动态库相比于静态库的一个优势是可以按需加载（使用`dlopen()`或者`[NSBundle loadAndReturnError:]`），在不使用的时候还可以卸载它们（`dlclose()`或者`[NSBundle unload]`）。这样做当然能够减少内存的使用量。但是用这种办法加载的动态库，并不会被`dydl3`缓存。
-如果想要按需加载动态库，我们需要将动态库从`Build Phases` -> `Link Binary With Libraries`里移除，这样在App启动时，就不会自动去加载动态库。相应的，和之前的可执行文件对比，你会发现可执行文件中少了加载对应动态库的`Load Command`。
+
+如果想要按需加载动态库，我们需要将动态库从`Build Phases` -> `Link Binary With Libraries`里移除（但是要保留其在`General` -> `Frameworks, Libraries, and Embedded Content`），这样在App启动时，就不会自动去加载动态库。相应的，和之前的可执行文件对比，你会发现可执行文件中少了加载对应动态库的`Load Command`。而且这样做以后，需要使用`Runtime`的方式去调用动态库中的类。
 
 ### 开发
 使用动态库相比起静态库而言，在开发阶段带给我们的便利还是挺多的。每次`Build`时，如果动态库的内容没有发生变化，我们不必编译整个App，只需要编译宿主App部分的代码，模块化的App能提高编译效率，也更利于团队协作。
 
+## 动态库热更新？
+iOS刚支持动态库的时候就有不少人打过类似的主意。在iOS 10以前，App Store发布的App不能使用这种方法，In-house和ad-hoc方式发布的可以。这是因为App Store发布的App在加载非系统动态库的时候，会检查动态库的签名，如果签名验证不通过，则会主动Crash进程，同时App Store版本的App还会检查加载的动态库和提交审核时候的动态库是否一致，不一致也不给加载。iOS 10以后，iOS禁止了App从沙盒加载动态库的能力，也就基本断了使用动态库热更新的想法。
 
 ## Reference 
 [iOS动态库制作以及遇到的坑](https://www.jianshu.com/p/87a412b07d5d)
