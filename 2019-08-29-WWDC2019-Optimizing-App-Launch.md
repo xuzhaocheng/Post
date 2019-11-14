@@ -40,7 +40,7 @@ Dynamic Linker Loads最新的版本是DYLD3，在iOS 13中被引入。DYLD负责
 
 在这个阶段，App给了我们两个建议来优化加载时间:
 - 移除不使用的framework，这能减少加载framework的时间。
-- 避免使用`DLOpen`, `NSBundleLoad`等一些动态加载的函数，这些方式加载的framework不能被DYLD cache。
+- 避免使用`dlopen`, `NSBundleLoad`等一些动态加载的函数，这些方式加载的framework不能被DYLD cache。
 - Hard Link所有framework。这能保证这些framework被DYLD缓存。
 
 关于Hard Link和Weak Link:

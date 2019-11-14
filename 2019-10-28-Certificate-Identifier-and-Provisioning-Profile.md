@@ -1,5 +1,5 @@
 ---
-title: 'Certification, Identifier and Provisioning Profile'
+title: 'Certificate, Identifier and Provisioning Profile'
 date: 2019-10-28 16:40:04
 categories:
 tags:
