@@ -24,33 +24,39 @@ tags:
 每个`App ID`有着对应的`Capability List`，它决定了这个`App ID`对应的App（们）有权限使用哪些系统服务（比如我们常见的地理位置服务，内购，推送...都属于这个范畴）。这些设置会被存放在`entitlement`文件中。如果我们的一系列App都拥有相同的`Capability`，使用`Wildcard App ID`就可以避免创建多个`Explicit App ID`。
 
 ## Certification
-证书，这大概是最让开发者头疼的东西之一。首先要明白证书是给代码签名用的，通俗一点，只要签了名，就表示这个App是由谁谁谁编写的，出了事是要找上门的。
-首先我们需要知道证书分为两类`Development`和`Distribution`。顾名思义，一个是开发测试阶段用的，一个是发布的时候用的。
+证书的作用是用来验证数字签名的，数字签名和数字证书能保证我们的App是由可信的实体编写和发布的，它没有被其他第三方修改过。签名和证书都依赖于非对称加密，RSA就是一种非常常见的非对称加密算法。这儿有必要介绍一下数字证书和数字签名的工作原理。
 
-### Distribution Certification
-发布证书的工作原理比较简单，因为我们的App都是通过App Store下载的，所有App都需要上传到Apple的服务器。Apple拥有一对公私钥，Apple使用私钥签名每一个上传到App Store的App。每台设备上又拥有一份公钥的备份，在运行App前iOS系统会使用这个公钥去验证App的签名是否合法，从而保证了即将运行的App是受信任的。
-<img src="diagram.001.png" alt="Distribution Certification">
-1. 开发者提交App到Apple服务器，Apple使用私钥签名App生成安装包。
-2. 运行时系统使用公钥验证App的签名是否合法，若不合法，则阻止App启动。
+数字签名的过程就是使用自己的私钥对需要签名的实体加密，然后将实体和加密过后的数据放在一起交由接收者。在App发布的过程中是先选定一种hash算法对App计算hash值，然后使用私钥对hash值进行加密，再将加密后的hash值和App打包一起发布。Mach-O文件中有专门存放数字签名的部分。
 
-### Development Certification
-`Development Certification`的工作原理比起`Distribution Certification`则稍微复杂一些，因为我们的App是直接被安装到设备上而不是通过App Store。创建`Development Certification`的时候，需要先在本地申请一个`Certificate Signing Request`文件，这实际是生成了一对密钥，然后把公钥传给Apple，最后从Apple那下载一份Certification。这一过程的原理和上传App到App Store有些相像，只不过之前我们验证的是App的签名，这里变成了验证开发者的公钥签名。具体的流程如下：
-<img src="diagram.002.png" alt="Distribution Certification" width="70%" height="70%">
+在非对称加密体系中，公钥是可以被任何人知晓的，它存在于数字证书中，在iOS系统打开App前会对App进行验证，使用公钥对签名时候加密的hash值解密，再使用相同的hash算法对App计算hash值，最后比对hash值是否相同，达到验证App是否是由期望的实体发布的目的。但是仅仅这样是不能保证我们的App是安全无害的，任何一个人都能生成一对公私钥，然后发布其公钥，验证的流程一样可以通过。所以我们需要对发布公钥的实体进行验证，这也就是为什么我们需要在Apple Developer Center上上传`CertificateSigningRequest`并下载证书了，Apple在这里充当了一个可信权威第三方实体的角色，Apple使用它的私钥对我们的`CertificateSigningRequest`进行了加密，从而保证了我们的公钥是可信的。
 
-1. 我们在本地申请`Certificate Signing Request`并把*Pub<sub>m</sub>*上传给Apple。
-2. Apple使用*Pri<sub>A</sub>*签名*Pub<sub>m</sub>*，获得一份证书，这份证书包含*Signature(Pub<sub>m</sub>)*和*Pub<sub>m</sub>*。
-3. 使用*Pri<sub>m</sub>*签名App获得*Signature(App)*，连同`2`中生成的证书和App一起打包成IPA文件。
-4. Device上打开App时，系统使用*Pub<sub>A</sub>*验证证书，验证成功则表明*Pub<sub>m</sub>*是受Apple信任的。
-5. 使用受信任的*Pub<sub>m</sub>*去验证*Signature(App)*，确保它是由*Pri<sub>m</sub>*签名的。
+<img src="diagram.002.png" alt="Certification" width="70%" height="70%">
 
-这样一来，就间接的验证了App是被Apple所信任的。
+其中申请证书包含了1、2两步：
+1. 本地生成`CertificateSigningRequest` -> 生成本地的公私钥对
+2. 上传Apple Developer Center，下载证书 -> 上传本地公钥交由Apple使用Apple的私钥签名生成证书并在本地导入证书，将本地私钥与证书关联
+
+如此一来，我们就有了用来签名的私钥和一份用来验证签名的证书。我们就可以用这个私钥对App进行签名。
+打包App包含了其中的3：
+3. 使用本地的私钥对App进行签名。
+
+> 因为App不止包含Mach-O文件，还包括资源文件和库文件，理论上来说这些文件都需要被签名，才能保证App的完整性。在Mach-O文件中，有一段专门定义的空间从来存储数字签名。其他文件的签名存储在`_CodeSignature/CodeResources`下，这是一个`XML`格式的文件，记录了文件名和其签名。除此之外，库文件也有其单独的签名文件`CodeResources`。
+
+iOS系统会在App启动前对App的签名进行验证，也就是上图中的4、5：
+4. 使用Apple的公钥对App中的证书进行验证。
+5. 验证通过后使用认证过的公钥对App内的签名进行验证。  
 
 ## Provisioning Profile
-除了证书之外，最后的安装包还会包含`entitlement`，`App ID`，如果是Development的安装包，那么还会包含`Device ID`s。Apple把这些文件的集合称之为`Provisioning Profile`。它最后会以`embeded.mobileprovision`存在于`IPA`文件内。
+但是这还不够，除了证书之外，最后的安装包还会包含`entitlement`，`App ID`，如果是Development的安装包，那么还会包含`Device ID`s。Apple把这些文件的集合称之为`Provisioning Profile`。它最后会以`embeded.mobileprovision`存在于`IPA`文件内。
 <img src="image.png" alt="Provisioning Profile">
 
-### Development Provisioning Profile
-`Development Provisioning Profile`的工作原理和`Development Certification`有些相像，可以理解成Provisioning Profile只是往里面多添加了一部分数据。
+我们可以使用命令
+```bash
+security cms -D -i embedded.mobileprovision
+```
+来查看`embedded.mobileprovision`文件中的内容。
+
+`Provisioning Profile`的工作原理如下图所示：
 <img src="diagram.003.png" alt="Distribution Certification" width="70%" height="70%">
 
 1. 我们在本地申请`Certificate Signing Request`并把*Pub<sub>m</sub>*上传给Apple。
@@ -60,13 +66,11 @@ tags:
 5. Device上打开App时，系统使用*Pub<sub>A</sub>*验证*PP*，验证成功后再验证*PP*里的证书*Cert*。
 6. 使用证书中的*Pub<sub>m</sub>*验证*Signature(App)*。
 
-### Distribution Provisioning Profile
-`Distribution Provisioning Profile`有多种类型的`Provisioniong Profile`
-- Ad Hoc
-- In House
-- App Store
+## App Store上的App
+如果你是从App Store上下载的App，打开包你会发现根本找不到`embedded.mobileprovision`文件。这是因为由App Store分发的App不再需要使用生成的证书来验证。我们所有在Apple Store上架的App，都需要将自己的App上传，所以App Store可以使用Apple的私钥去对Apple签名，而不再需要使用*Pub<sub>m</sub>*。而且App Store会对Mach-O文件进行加密，我们本地签的名也会失效。验证的过程就更加简单了：
+<img src="diagram.001.png" alt="Distribution Certification">
 
-`Ad Hoc`和`In House`的流程和Development的原理是差不多的。`App Store`的工作原理比较简单，和上面讲的差不多，因为可以直接使用私钥对App进行签名。[这里](https://wereadteam.github.io/2017/03/13/Signature/)有详细的说明
+[这里](https://wereadteam.github.io/2017/03/13/Signature/)有一些更详细的说明。
 > 而 AppStore 的签名验证方式有些不一样，前面我们说到最简单的签名方式，苹果在后台直接用私钥签名 App 就可以了，实际上苹果确实是这样做的，如果去下载一个 AppStore 的安装包，会发现它里面是没有 embedded.mobileprovision 文件的，也就是它安装和启动的流程是不依赖这个文件，验证流程也就跟上述几种类型不一样了。
 
 > 据猜测，因为上传到 AppStore 的包苹果会重新对内容加密，原来的本地私钥签名就没有用了，需要重新签名，从 AppStore 下载的包苹果也并不打算控制它的有效期，不需要内置一个 embedded.mobileprovision 去做校验，直接在苹果用后台的私钥重新签名，iOS 安装时用本地公钥验证 App 签名就可以了。
@@ -80,3 +84,4 @@ tags:
 [iOS App 签名的原理](https://wereadteam.github.io/2017/03/13/Signature/)
 [逆向Appstore应用（二）](https://www.jianshu.com/p/f42073b4bea1)
 [iOS - How to Create a Provisioning Profile](https://customersupport.doubledutch.me/hc/en-us/articles/229496268-iOS-How-to-Create-a-Provisioning-Profile)
+[Code Signing Guide](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/AboutCS/AboutCS.html)
